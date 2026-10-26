@@ -232,3 +232,11 @@ table.orders th, table.orders td { border-bottom: 1px solid var(--line); padding
   .cats { top: 60px; }
   .card .thumb { aspect-ratio: 16 / 9; }
 }
+
+/* Sign-in gate: the menu is hidden until the visitor signs in with Gmail. */
+.gate { display: none; min-height: 70vh; place-items: center; padding: 24px 16px; text-align: center; }
+.gate-card { max-width: 360px; display: grid; gap: 14px; justify-items: center; }
+.gate-card h2 { margin: 0; font-size: 22px; color: var(--red); }
+.gate-card p { margin: 0; color: var(--muted); }
+body.locked .gate { display: grid; }
+body.locked main, body.locked .cats, body.locked .cart-btn { display: none; }

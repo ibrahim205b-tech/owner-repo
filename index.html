@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="assets/css/style.css">
 </head>
-<body>
+<body class="locked">
   <header class="site-header">
     <div class="wrap">
       <h1 class="brand">مطعم الحجي<small>المنيو</small></h1>
@@ -23,6 +23,15 @@
       </div>
     </div>
   </header>
+
+  <section class="gate" aria-labelledby="gate-title">
+    <div class="gate-card">
+      <h2 id="gate-title">أهلاً بك في مطعم الحجي</h2>
+      <p>لعرض المنيو وطلب الأكل، سجّل الدخول بحساب Gmail أولاً.</p>
+      <button class="btn" id="gate-signin" type="button">دخول بحساب Gmail</button>
+      <p class="muted" id="gate-note">الموقع قيد الإعداد، وسيُفعَّل تسجيل الدخول قريباً.</p>
+    </div>
+  </section>
 
   <nav class="cats" aria-label="أقسام المنيو" id="cats" hidden>
     <ul id="cat-list"></ul>

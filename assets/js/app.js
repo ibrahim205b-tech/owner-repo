@@ -155,22 +155,20 @@
   function renderAccount() {
     var box = $("account");
     box.innerHTML = "";
-    if (!orderingEnabled) {
-      // Show the sign-in button even before the backend is connected, so visitors see it.
-      box.appendChild(el("button", {
-        class: "btn small ghost",
-        type: "button",
-        disabled: true,
-        title: "تسجيل الدخول يُفعَّل بعد ربط قاعدة البيانات",
-      }, ["دخول بحساب Gmail"]));
-      return;
-    }
     if (user) {
       box.appendChild(el("button", { class: "btn small ghost", type: "button", onclick: function () { openDrawer("orders"); } }, ["طلباتي"]));
       box.appendChild(el("button", { class: "btn small ghost", type: "button", onclick: signOut }, ["خروج"]));
-    } else {
-      box.appendChild(el("button", { class: "btn small ghost", type: "button", onclick: signIn }, ["دخول بحساب Gmail"]));
     }
+    renderGate();
+  }
+
+  // Visitors must sign in with Gmail before they can see the menu.
+  function renderGate() {
+    var locked = !orderingEnabled || !user;
+    document.body.classList.toggle("locked", locked);
+    var btn = $("gate-signin");
+    btn.disabled = !orderingEnabled;
+    $("gate-note").hidden = orderingEnabled;
   }
 
   async function signIn() {
@@ -529,6 +527,7 @@
     }
   }
 
+  $("gate-signin").addEventListener("click", signIn);
   $("open-cart").addEventListener("click", function () { openDrawer("cart"); });
   $("close-cart").addEventListener("click", closeDrawer);
   $("overlay").addEventListener("click", closeDrawer);
