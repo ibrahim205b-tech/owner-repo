@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>طلبات المطعم - مطعم الحجي</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <h1 class="brand">طلبات المطعم<small>مطعم الحجي</small></h1>
+      <button class="btn small ghost" id="logout" type="button" hidden style="background:#fff">خروج</button>
+    </div>
+  </header>
+
+  <div class="admin-wrap">
+    <section class="login-box panel" id="login-panel" hidden>
+      <h2 style="margin-top:0">دخول الموظف</h2>
+      <form id="login-form">
+        <input class="field" type="email" name="email" placeholder="البريد الإلكتروني" required autocomplete="username">
+        <input class="field" type="password" name="password" placeholder="كلمة المرور" required autocomplete="current-password">
+        <button class="btn" type="submit">دخول</button>
+        <p class="form-error" id="login-error" role="alert"></p>
+      </form>
+    </section>
+
+    <div id="app" hidden>
+      <div id="alert" class="staff-alert" hidden></div>
+      <div class="big-tabs" role="tablist">
+        <button class="tab" id="tab-new" type="button" role="tab" aria-selected="true">جديدة <span id="count-new"></span></button>
+        <button class="tab" id="tab-active" type="button" role="tab" aria-selected="false">قيد التنفيذ <span id="count-active"></span></button>
+        <button class="tab" id="tab-done" type="button" role="tab" aria-selected="false">منتهية</button>
+      </div>
+      <p class="notice" id="staff-notice" hidden></p>
+      <section id="orders" aria-live="polite"></section>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/cart.js"></script>
+  <script src="assets/js/order.js"></script>
+  <script src="assets/js/staff.js"></script>
+</body>
+</html>

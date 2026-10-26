@@ -3,8 +3,8 @@
 -- Run this file once in the Supabase SQL editor, then run seed.sql.
 -- =====================================================================
 
--- ---------- Admins ----------
--- A user is an admin only if their auth user id is listed here.
+-- ---------- Staff and admins ----------
+-- A user is staff/admin only if their auth user id is listed here.
 create table if not exists public.admins (
   user_id uuid primary key references auth.users(id) on delete cascade
 );
@@ -57,14 +57,25 @@ create index if not exists options_product_idx on public.product_options(product
 create table if not exists public.orders (
   id bigint generated always as identity primary key,
   created_at timestamptz not null default now(),
+  customer_user_id uuid references auth.users(id) on delete set null,
   customer_name text not null,
   phone text not null,
-  address text not null,
+  -- Exact location pinned on the map, and the nearest landmark written by the customer.
+  lat double precision not null check (lat between 29 and 38),
+  lng double precision not null check (lng between 38 and 49.5),
+  landmark text not null,
   notes text,
   total_iqd int not null check (total_iqd >= 0),
   payment text not null default 'cash_on_delivery' check (payment in ('cash_on_delivery')),
-  status text not null default 'new' check (status in ('new', 'preparing', 'delivered', 'cancelled'))
+  status text not null default 'pending'
+    check (status in ('pending', 'accepted', 'rejected', 'preparing', 'delivered', 'cancelled')),
+  reject_reason text,
+  decided_at timestamptz,
+  decided_by uuid references auth.users(id) on delete set null
 );
+
+create index if not exists orders_customer_idx on public.orders(customer_user_id, created_at desc);
+create index if not exists orders_status_idx on public.orders(status, created_at desc);
 
 -- Snapshot of name and price at order time, so old invoices never change.
 create table if not exists public.order_items (
@@ -91,7 +102,7 @@ alter table public.product_options enable row level security;
 alter table public.orders enable row level security;
 alter table public.order_items enable row level security;
 
--- admins table: only admins can read it (nobody can write it from the API).
+-- admins table: a user can see only their own row.
 drop policy if exists "admins read own" on public.admins;
 create policy "admins read own" on public.admins
   for select using (user_id = auth.uid());
@@ -118,28 +129,36 @@ drop policy if exists "admin manage options" on public.product_options;
 create policy "admin manage options" on public.product_options
   for all using (public.is_admin()) with check (public.is_admin());
 
--- Orders: no direct access for the public. They are created only through create_order().
+-- Orders: no direct writes for anyone. They are created and changed only through
+-- create_order() and set_order_status(), which are security definer functions.
 drop policy if exists "admin read orders" on public.orders;
 create policy "admin read orders" on public.orders
   for select using (public.is_admin());
-drop policy if exists "admin update orders" on public.orders;
-create policy "admin update orders" on public.orders
-  for update using (public.is_admin()) with check (public.is_admin());
+drop policy if exists "customer read own orders" on public.orders;
+create policy "customer read own orders" on public.orders
+  for select using (customer_user_id = auth.uid());
 
 drop policy if exists "admin read order items" on public.order_items;
 create policy "admin read order items" on public.order_items
   for select using (public.is_admin());
+drop policy if exists "customer read own order items" on public.order_items;
+create policy "customer read own order items" on public.order_items
+  for select using (exists (
+    select 1 from public.orders o where o.id = order_id and o.customer_user_id = auth.uid()
+  ));
 
 -- =====================================================================
 -- create_order: the ONLY way a customer places an order.
--- The browser sends product ids, option ids and quantities only.
--- Prices are read here from the database; any price sent by the browser is ignored.
+-- The customer must be signed in with Google. The browser sends product ids, option ids,
+-- quantities and location only. Prices are read here from the database.
 -- The whole function runs in one transaction: any error cancels the order.
 -- =====================================================================
 create or replace function public.create_order(
   p_customer_name text,
   p_phone text,
-  p_address text,
+  p_lat double precision,
+  p_lng double precision,
+  p_landmark text,
   p_notes text,
   p_items jsonb
 )
@@ -149,39 +168,55 @@ security definer
 set search_path = public
 as $$
 declare
+  v_uid uuid := auth.uid();
   v_order_id bigint;
   v_total int := 0;
   v_item jsonb;
   v_product public.products%rowtype;
   v_option public.product_options%rowtype;
-  v_qty int;
+  v_qty numeric;
   v_unit int;
   v_label text;
   v_option_id text;
+  v_open int;
 begin
+  if v_uid is null then
+    raise exception 'LOGIN_REQUIRED';
+  end if;
   if p_customer_name is null or char_length(trim(p_customer_name)) < 2 or char_length(trim(p_customer_name)) > 100 then
     raise exception 'INVALID_NAME';
   end if;
   if p_phone is null or trim(p_phone) !~ '^\+?[0-9 ]{7,20}$' then
     raise exception 'INVALID_PHONE';
   end if;
-  if p_address is null or char_length(trim(p_address)) < 5 or char_length(trim(p_address)) > 300 then
-    raise exception 'INVALID_ADDRESS';
+  if p_lat is null or p_lng is null or p_lat < 29 or p_lat > 38 or p_lng < 38 or p_lng > 49.5 then
+    raise exception 'INVALID_LOCATION';
+  end if;
+  if p_landmark is null or char_length(trim(p_landmark)) < 3 or char_length(trim(p_landmark)) > 200 then
+    raise exception 'INVALID_LANDMARK';
   end if;
   if jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 or jsonb_array_length(p_items) > 50 then
     raise exception 'INVALID_ITEMS';
   end if;
 
-  insert into public.orders (customer_name, phone, address, notes, total_iqd)
-  values (trim(p_customer_name), trim(p_phone), trim(p_address), left(trim(coalesce(p_notes, '')), 500), 0)
+  -- Limit open orders per customer, to stop spam.
+  select count(*) into v_open from public.orders
+    where customer_user_id = v_uid and status in ('pending', 'accepted', 'preparing');
+  if v_open >= 3 then
+    raise exception 'TOO_MANY_OPEN_ORDERS';
+  end if;
+
+  insert into public.orders (customer_user_id, customer_name, phone, lat, lng, landmark, notes, total_iqd)
+  values (v_uid, trim(p_customer_name), trim(p_phone), p_lat, p_lng, trim(p_landmark),
+          left(trim(coalesce(p_notes, '')), 500), 0)
   returning id into v_order_id;
 
   for v_item in select value from jsonb_array_elements(p_items) loop
     if jsonb_typeof(v_item->'qty') <> 'number' then
       raise exception 'INVALID_QTY';
     end if;
-    v_qty := (v_item->>'qty')::numeric::int;
-    if v_qty < 1 or v_qty > 50 or (v_item->>'qty')::numeric <> v_qty then
+    v_qty := (v_item->>'qty')::numeric;
+    if v_qty < 1 or v_qty > 50 or v_qty <> floor(v_qty) then
       raise exception 'INVALID_QTY';
     end if;
 
@@ -211,31 +246,97 @@ begin
     insert into public.order_items
       (order_id, product_id, option_id, product_name, option_label, unit_price, qty, line_total)
     values
-      (v_order_id, v_product.id, v_option_id, v_product.name, v_label, v_unit, v_qty, v_unit * v_qty);
+      (v_order_id, v_product.id, v_option_id, v_product.name, v_label, v_unit, v_qty::int, v_unit * v_qty::int);
 
-    v_total := v_total + v_unit * v_qty;
+    v_total := v_total + v_unit * v_qty::int;
   end loop;
 
   update public.orders set total_iqd = v_total where id = v_order_id;
 
-  return json_build_object('order_id', v_order_id, 'total_iqd', v_total);
+  return json_build_object('order_id', v_order_id, 'total_iqd', v_total, 'status', 'pending');
 end;
 $$;
 
-revoke all on function public.create_order(text, text, text, text, jsonb) from public;
-grant execute on function public.create_order(text, text, text, text, jsonb) to anon, authenticated;
+-- =====================================================================
+-- set_order_status: the only way staff change an order.
+-- Allowed moves:
+--   pending   -> accepted | rejected
+--   accepted  -> preparing | cancelled
+--   preparing -> delivered | cancelled
+-- =====================================================================
+create or replace function public.set_order_status(
+  p_order_id bigint,
+  p_status text,
+  p_reason text default null
+)
+returns json
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  o public.orders%rowtype;
+  v_uid uuid := auth.uid();
+begin
+  if not public.is_admin() then
+    raise exception 'NOT_ADMIN';
+  end if;
 
--- Give read access to the public functions/tables the site needs.
+  select * into o from public.orders where id = p_order_id for update;
+  if not found then
+    raise exception 'ORDER_NOT_FOUND';
+  end if;
+
+  if not (
+    (o.status = 'pending'   and p_status in ('accepted', 'rejected')) or
+    (o.status = 'accepted'  and p_status in ('preparing', 'cancelled')) or
+    (o.status = 'preparing' and p_status in ('delivered', 'cancelled'))
+  ) then
+    raise exception 'INVALID_TRANSITION';
+  end if;
+
+  update public.orders set
+    status = p_status,
+    decided_at = case when o.status = 'pending' then now() else decided_at end,
+    decided_by = case when o.status = 'pending' then v_uid else decided_by end,
+    reject_reason = case when p_status = 'rejected'
+                         then left(nullif(trim(coalesce(p_reason, '')), ''), 300)
+                         else reject_reason end
+  where id = p_order_id;
+
+  return json_build_object('order_id', p_order_id, 'status', p_status);
+end;
+$$;
+
+revoke all on function public.create_order(text, text, double precision, double precision, text, text, jsonb) from public, anon;
+grant execute on function public.create_order(text, text, double precision, double precision, text, text, jsonb) to authenticated;
+revoke all on function public.set_order_status(bigint, text, text) from public, anon;
+grant execute on function public.set_order_status(bigint, text, text) to authenticated;
+
+-- Grants: the public reads the active menu; staff/admins manage the menu; customers read their own orders.
 grant usage on schema public to anon, authenticated;
 grant select on public.sections, public.products, public.product_options to anon, authenticated;
 grant insert, update, delete on public.sections, public.products, public.product_options to authenticated;
-grant select, update on public.orders, public.order_items to authenticated;
+grant select on public.orders, public.order_items to authenticated;
 grant select on public.admins to authenticated;
 
+-- Live updates: the staff app and the customer's order page listen to changes on orders.
+-- Row Level Security still decides which rows each user receives.
+do $$
+begin
+  if exists (select 1 from pg_publication where pubname = 'supabase_realtime')
+     and not exists (
+       select 1 from pg_publication_tables
+       where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'orders'
+     ) then
+    alter publication supabase_realtime add table public.orders;
+  end if;
+end $$;
+
 -- =====================================================================
--- To make yourself an admin after you create your user in
--- Supabase Authentication > Users, run (replace the email):
+-- To make a staff member or admin (after they sign in once with their email and password):
+-- create the user in Supabase Authentication > Users, then run:
 --   insert into public.admins (user_id)
---   select id from auth.users where email = 'you@example.com'
+--   select id from auth.users where email = 'staff@example.com'
 --   on conflict do nothing;
 -- =====================================================================

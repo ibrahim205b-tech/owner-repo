@@ -277,12 +277,20 @@
   }
 
   // ---------- orders ----------
+  // Must match set_order_status in schema.sql.
+  function allowedNext(status) {
+    if (status === "pending") return ["accepted", "rejected"];
+    if (status === "accepted") return ["preparing", "cancelled"];
+    if (status === "preparing") return ["delivered", "cancelled"];
+    return [];
+  }
+
   async function renderOrders() {
     var panel = $("panel");
     panel.innerHTML = "";
     panel.appendChild(el("p", { class: "muted", text: "جارٍ تحميل الطلبات..." }));
     var res = await client.from("orders")
-      .select("id,created_at,customer_name,phone,address,notes,total_iqd,status,order_items(product_name,option_label,unit_price,qty,line_total)")
+      .select("id,created_at,customer_name,phone,landmark,lat,lng,notes,total_iqd,status,reject_reason,order_items(product_name,option_label,unit_price,qty,line_total)")
       .order("created_at", { ascending: false })
       .limit(100);
     panel.innerHTML = "";
@@ -291,29 +299,34 @@
       panel.appendChild(el("p", { class: "muted", text: "لا توجد طلبات بعد." }));
       return;
     }
+    var labels = { pending: "بانتظار الرد", accepted: "مقبول", preparing: "قيد التحضير", delivered: "تم التسليم", rejected: "مرفوض", cancelled: "ملغي" };
     var rows = res.data.map(function (o) {
+      // Status changes go through set_order_status, the same rules the staff app uses.
       var sel = el("select", { class: "field", "aria-label": "حالة الطلب", onchange: async function (e) {
-        var r = await client.from("orders").update({ status: e.target.value }).eq("id", o.id);
-        if (r.error) return fail(r.error);
+        var r = await client.rpc("set_order_status", { p_order_id: o.id, p_status: e.target.value, p_reason: null });
+        if (r.error) { e.target.value = o.status; return fail(r.error); }
         notice("تم تحديث حالة الطلب " + o.id + ".");
-      } }, ["new", "preparing", "delivered", "cancelled"].map(function (st) {
-        var labels = { new: "جديد", preparing: "قيد التحضير", delivered: "تم التسليم", cancelled: "ملغي" };
-        return el("option", { value: st, selected: st === o.status, text: labels[st] });
+        renderOrders();
+      } }, Object.keys(labels).map(function (st) {
+        return el("option", { value: st, selected: st === o.status, disabled: st !== o.status && !allowedNext(o.status).includes(st), text: labels[st] });
       }));
       var items = (o.order_items || []).map(function (it) {
         return it.product_name + (it.option_label ? " (" + it.option_label + ")" : "") + " × " + it.qty + " = " + fmt(it.line_total);
       }).join("\n");
+      var where = o.lat != null
+        ? el("a", { href: "https://www.openstreetmap.org/?mlat=" + o.lat + "&mlon=" + o.lng + "#map=18/" + o.lat + "/" + o.lng, target: "_blank", rel: "noopener", text: "الموقع على الخريطة" })
+        : null;
       return el("tr", null, [
         el("td", null, ["#" + o.id, el("div", { class: "muted", text: new Date(o.created_at).toLocaleString("ar-IQ") })]),
         el("td", null, [o.customer_name, el("div", { class: "muted", text: o.phone })]),
-        el("td", null, [o.address, o.notes ? el("div", { class: "muted", text: o.notes }) : null]),
+        el("td", null, [o.landmark, where, o.notes ? el("div", { class: "muted", text: o.notes }) : null]),
         el("td", { style: "white-space:pre-line" }, [items]),
-        el("td", null, [el("strong", { text: fmt(o.total_iqd) })]),
+        el("td", null, [el("strong", { text: fmt(o.total_iqd) }), o.reject_reason ? el("div", { class: "muted", text: "سبب الرفض: " + o.reject_reason }) : null]),
         el("td", null, [sel]),
       ]);
     });
     panel.appendChild(el("table", { class: "orders" }, [
-      el("thead", null, [el("tr", null, ["الطلب", "الزبون", "العنوان", "الأصناف", "المجموع", "الحالة"].map(function (h) { return el("th", { text: h }); }))]),
+      el("thead", null, [el("tr", null, ["الطلب", "الزبون", "الموقع", "الأصناف", "المجموع", "الحالة"].map(function (h) { return el("th", { text: h }); }))]),
       el("tbody", null, rows),
     ]));
   }
