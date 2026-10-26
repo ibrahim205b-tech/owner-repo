@@ -24,9 +24,8 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - uses: android-actions/setup-android@v3
-
-      - name: Install Android SDK platform and build tools
+      # GitHub's Ubuntu image already includes the Android SDK (ANDROID_HOME) and sdkmanager.
+      - name: Install Android platform and build tools
         run: |
           yes | sdkmanager --licenses > /dev/null || true
           sdkmanager "platforms;android-34" "build-tools;34.0.0"
