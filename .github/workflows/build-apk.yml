@@ -24,11 +24,29 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # GitHub's Ubuntu image already includes the Android SDK (ANDROID_HOME) and sdkmanager.
+      # GitHub's Ubuntu image already includes the Android SDK. Locate it explicitly,
+      # accept the standard licenses by writing the license files, and retry the download.
       - name: Install Android platform and build tools
         run: |
-          yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+          set -e
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          echo "Android SDK at: $SDK"
+          SDKMANAGER="$SDK/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(command -v sdkmanager)"
+          fi
+          echo "sdkmanager: $SDKMANAGER"
+          mkdir -p "$SDK/licenses"
+          printf '\n24333f8a63b6825ea9c5514f83c2829b004d1fee\n' > "$SDK/licenses/android-sdk-license"
+          printf '\n84831b9409646a918e30573bab4c9c91346d8abd\n' > "$SDK/licenses/android-sdk-preview-license"
+          for attempt in 1 2 3; do
+            if "$SDKMANAGER" --sdk_root="$SDK" "platforms;android-34" "build-tools;34.0.0"; then
+              exit 0
+            fi
+            echo "sdkmanager attempt $attempt failed, retrying..."
+            sleep 10
+          done
+          exit 1
 
       - uses: gradle/actions/setup-gradle@v4
         with:
