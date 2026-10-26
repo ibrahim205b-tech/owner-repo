@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>لوحة إدارة المنيو - مطعم الحجي</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="assets/css/style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <h1 class="brand">لوحة الإدارة<small>مطعم الحجي</small></h1>
+      <button class="btn small ghost" id="logout" type="button" hidden style="background:#fff">تسجيل الخروج</button>
+    </div>
+  </header>
+
+  <div class="admin-wrap">
+    <section class="login-box panel" id="login-panel" hidden>
+      <h2 style="margin-top:0">تسجيل الدخول</h2>
+      <form id="login-form">
+        <input class="field" type="email" name="email" placeholder="البريد الإلكتروني" required autocomplete="username">
+        <input class="field" type="password" name="password" placeholder="كلمة المرور" required autocomplete="current-password">
+        <button class="btn" type="submit">دخول</button>
+        <p class="form-error" id="login-error" role="alert"></p>
+      </form>
+    </section>
+
+    <div id="app" hidden>
+      <div class="admin-top">
+        <div class="tabs" role="tablist">
+          <button class="tab" role="tab" id="tab-menu" aria-selected="true" aria-controls="panel" type="button">المنيو</button>
+          <button class="tab" role="tab" id="tab-orders" aria-selected="false" aria-controls="panel" type="button">الطلبات</button>
+        </div>
+        <span class="muted" id="who"></span>
+      </div>
+      <p class="notice" id="admin-notice" hidden></p>
+      <section class="panel" id="panel" role="tabpanel"></section>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="assets/js/config.js"></script>
+  <script src="assets/js/data.js"></script>
+  <script src="assets/js/admin.js"></script>
+</body>
+</html>
