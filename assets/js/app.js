@@ -155,7 +155,16 @@
   function renderAccount() {
     var box = $("account");
     box.innerHTML = "";
-    if (!orderingEnabled) return;
+    if (!orderingEnabled) {
+      // Show the sign-in button even before the backend is connected, so visitors see it.
+      box.appendChild(el("button", {
+        class: "btn small ghost",
+        type: "button",
+        disabled: true,
+        title: "تسجيل الدخول يُفعَّل بعد ربط قاعدة البيانات",
+      }, ["دخول بحساب Gmail"]));
+      return;
+    }
     if (user) {
       box.appendChild(el("button", { class: "btn small ghost", type: "button", onclick: function () { openDrawer("orders"); } }, ["طلباتي"]));
       box.appendChild(el("button", { class: "btn small ghost", type: "button", onclick: signOut }, ["خروج"]));
