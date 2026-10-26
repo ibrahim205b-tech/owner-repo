@@ -76,8 +76,16 @@
 
   async function loadMenu(config) {
     var client = getClient(config);
-    if (client) return loadFromDatabase(client);
-    return loadFallback();
+    if (!client) return loadFallback();
+    try {
+      return await loadFromDatabase(client);
+    } catch (err) {
+      // The database is unreachable or not set up yet: show the built-in menu
+      // so visitors never see an empty page. Ordering stays disabled because
+      // the app will not be able to verify orders without the database.
+      console.error("Menu from database failed, showing built-in menu:", err);
+      return loadFallback();
+    }
   }
 
   // Lookup tables used by the page and the cart.
